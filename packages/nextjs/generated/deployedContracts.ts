@@ -5,7 +5,7 @@ const contracts = {
       name: "localhost",
       contracts: {
         TokenWill: {
-          address: "0x021DBfF4A864Aa25c51F0ad2Cd73266Fde66199d",
+          address: "0x2498e8059929e18e2a2cED4e32ef145fa2F4a744",
           abi: [
             {
               anonymous: false,

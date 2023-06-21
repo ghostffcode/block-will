@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/router";
 import { useScaffoldContractRead } from "../../hooks/scaffold-eth/useScaffoldContractRead";
 import { useScaffoldContractWrite } from "../../hooks/scaffold-eth/useScaffoldContractWrite";
+import classNames from "classnames";
 import { addYears, formatDistanceToNow } from "date-fns";
 import { ethers } from "ethers";
 import { NextPage } from "next";
@@ -17,8 +18,10 @@ const TokenPage: NextPage = () => {
   const { tokenAddress } = router.query;
   const { address } = useAccount();
   const [beneficiary, setBeneficiary] = useState<string>("");
+  const [testator, setTestator] = useState<string>("");
   const [percentage, setPercentage] = useState<number>(0);
   const [showPicker, setShowPicker] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<number>(1);
   const [selectedDay, setSelectedDay] = useState<Date>();
   const { data: tokenInfo } = useToken({
     address: tokenAddress as string,
@@ -28,6 +31,12 @@ const TokenPage: NextPage = () => {
     contractName: "TokenWill",
     functionName: "willToken",
     args: [beneficiary, tokenAddress as string, ethers.BigNumber.from(percentage || "0")],
+  });
+
+  const { writeAsync: withdrawToken } = useScaffoldContractWrite({
+    contractName: "TokenWill",
+    functionName: "withdraw",
+    args: [testator, tokenAddress as string],
   });
 
   const { writeAsync: registerProof } = useScaffoldContractWrite({
@@ -70,73 +79,129 @@ const TokenPage: NextPage = () => {
     }
   }, [deadline]);
 
+  const tabs = [
+    { id: 1, title: "Allocate" },
+    { id: 2, title: "Withdraw" },
+  ];
+
   return (
     <>
       <MetaHeader />
-      <section className="max-w-lg mx-auto mt-36 my-20 space-y-12">
-        <div className="flex items-center flex-col flex-grow">
-          <h1 className="text-center">
-            <span className="block text-4xl font-bold">
-              Allocate {tokenInfo?.name} ({tokenInfo?.symbol})
-            </span>
-          </h1>
-          <div className="flex flex-1 flex-col justify-center w-full mt-2 space-y-2">
-            <div className="text-center">{renderDeadline()}</div>
-            <button className="btn btn-primary" onClick={() => setShowPicker(!showPicker)}>
-              Change unlock date
-            </button>
+      <section className="max-w-lg w-full mx-auto mt-28 my-20 space-y-12">
+        <div className="tabs justify-center">
+          {tabs.map(i => (
+            <a
+              className={classNames("tab border-b-2", {
+                "tab-active": i.id === activeTab,
+                "border-gray-500": i.id !== activeTab,
+              })}
+              key={i.id}
+              onClick={() => setActiveTab(i.id)}
+            >
+              {i.title}
+            </a>
+          ))}
+        </div>
+        {activeTab === 1 && (
+          <>
+            <div className="flex items-center flex-col flex-grow">
+              <h1 className="text-center">
+                <span className="block text-4xl font-bold">
+                  Allocate {tokenInfo?.name} ({tokenInfo?.symbol})
+                </span>
+              </h1>
+              <div className="flex flex-1 flex-col justify-center w-full mt-2 space-y-2">
+                <div className="text-center">{renderDeadline()}</div>
+                <button className="btn btn-primary" onClick={() => setShowPicker(!showPicker)}>
+                  Change unlock date
+                </button>
 
-            {showPicker && (
-              <div className="mt-4 flex flex-1 flex-col items-center justify-center">
-                <DayPicker
-                  mode="single"
-                  captionLayout="dropdown-buttons"
-                  selected={selectedDay}
-                  onSelect={setSelectedDay}
-                  fromDate={new Date()}
-                  toDate={addYears(new Date(), 20)}
-                  classNames={{
-                    day_selected: "bg-blue-600 text-primary-foreground",
+                {showPicker && (
+                  <div className="mt-4 flex flex-1 flex-col items-center justify-center">
+                    <DayPicker
+                      mode="single"
+                      captionLayout="dropdown-buttons"
+                      selected={selectedDay}
+                      onSelect={setSelectedDay}
+                      fromDate={new Date()}
+                      toDate={addYears(new Date(), 20)}
+                      classNames={{
+                        day_selected: "bg-blue-600 text-primary-foreground",
+                      }}
+                    />
+                    <button className="btn btn-primary" onClick={registerProof}>
+                      Set date
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-1 flex-col justify-center w-full mx-auto space-y-2">
+              <div className="text-center">
+                Total % of {tokenInfo?.symbol} allocation shared: {totalAllocation?.toString() || 0} / 100
+              </div>
+              <progress
+                className="progress progress-warning w-full"
+                value={totalAllocation?.toString() || 0}
+                max="100"
+              ></progress>
+            </div>
+
+            <div className="flex flex-1 flex-col w-full mt-8 mx-auto space-y-3">
+              <AddressInput placeholder="Beneficiary Address" value={beneficiary} onChange={setBeneficiary} />
+              <InputBase
+                type="number"
+                placeholder="Allocation percentage"
+                value={percentage}
+                onChange={setPercentage}
+                suffix={
+                  <div className="flex flex-nowrap mt-1 px-2">
+                    <span className="whitespace-nowrap">% of balance</span>
+                  </div>
+                }
+              />
+              <div className="w-full text-center">
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    await willToken();
+
+                    setBeneficiary("");
+                    setPercentage(0);
                   }}
-                />
-                <button className="btn btn-primary" onClick={registerProof}>
-                  Set date
+                >
+                  {percentage === 0 ? "Remove Allocation" : `Allocate ${percentage}%`}
                 </button>
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          </>
+        )}
+        {activeTab === 2 && (
+          <>
+            <div className="flex items-center flex-col flex-grow">
+              <h1 className="text-center">
+                <span className="block text-4xl font-bold">Withdraw {tokenInfo?.symbol} allocation</span>
+              </h1>
+            </div>
 
-        <div className="flex flex-1 flex-col justify-center w-full mx-auto space-y-2">
-          <div className="text-center">
-            Total % of {tokenInfo?.symbol} allocation shared: {totalAllocation?.toString() || 0} / 100
-          </div>
-          <progress
-            className="progress progress-warning w-full"
-            value={totalAllocation?.toString() || 0}
-            max="100"
-          ></progress>
-        </div>
+            <div className="flex flex-1 flex-col w-full mt-8 mx-auto space-y-3">
+              <AddressInput placeholder="Testator Address" value={testator} onChange={setTestator} />
+              <div className="w-full text-center">
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    await withdrawToken();
 
-        <div className="flex flex-1 flex-col w-full mt-8 mx-auto space-y-3">
-          <AddressInput placeholder="Beneficiary Address" value={beneficiary} onChange={setBeneficiary} />
-          <InputBase
-            type="number"
-            placeholder="Allocation percentage"
-            value={percentage}
-            onChange={setPercentage}
-            suffix={
-              <div className="flex flex-nowrap mt-1 px-2">
-                <span className="whitespace-nowrap">% of your {tokenInfo?.symbol} balance</span>
+                    setTestator("");
+                  }}
+                >
+                  Withdraw Allocation
+                </button>
               </div>
-            }
-          />
-          <div className="w-full text-center">
-            <button className="btn btn-primary" disabled={percentage === 0} onClick={willToken}>
-              Allocate {percentage} {tokenInfo?.symbol}
-            </button>
-          </div>
-        </div>
+            </div>
+          </>
+        )}
       </section>
     </>
   );
